@@ -1,21 +1,21 @@
 import express from "express";
 import {
   getWatchlist,
+  getWatchlistIds,
   addToWatchlist,
   removeFromWatchlist,
   checkWatchlistStatus,
 } from "../controllers/watchlistController.js";
 import { authenticate } from "../middleware/authMiddleware.js";
-import { validate } from "../middleware/validate.js";
-import { addToWatchlistSchema } from "../validators/watchlistValidators.js";
 
 const router = express.Router();
 
 router.use(authenticate);
 
 router.get("/", getWatchlist);
-router.post("/", validate(addToWatchlistSchema), addToWatchlist);
-router.get("/check/:movieId", checkWatchlistStatus);
-router.delete("/:movieId", removeFromWatchlist);
+router.get("/ids", getWatchlistIds);                     // O(1) Set hydration endpoint
+router.post("/", addToWatchlist);
+router.get("/check/:mediaId", checkWatchlistStatus);
+router.delete("/:mediaId", removeFromWatchlist);
 
 export default router;

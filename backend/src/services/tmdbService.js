@@ -1,234 +1,394 @@
+/**
+ * @file backend/src/services/tmdbService.js
+ * @description Hardened TMDB API proxy with:
+ *  - Promise Coalescing (anti-stampede / thundering-herd protection)
+ *  - Multi-tier in-memory TTL cache (Static 24h, Dynamic 30m, Search 15m)
+ *  - Graceful fallback to stale cache on TMDB 5xx / 429
+ *  - Normalized unified schema across Movie and TV responses
+ *  - Watch Provider integration for streaming platform attribution
+ */
+
 import axios from "axios";
 import NodeCache from "node-cache";
 import { env } from "../config/env.js";
 
-// 15-minute TTL cache for movie data
-const cache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
-
-const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-
-const getHeaders = () => {
-  return {
-    accept: "application/json",
-    Authorization: `Bearer ${env.TMDB_READ_ACCESS_TOKEN}`,
-  };
+// ---------------------------------------------------------------------------
+// Cache tiers (seconds)
+// ---------------------------------------------------------------------------
+const TTL = {
+  STATIC: 86400,   // 24h — details, credits, providers, season metadata
+  DYNAMIC: 1800,   // 30m — trending, popular, now_playing
+  SEARCH: 900,     // 15m — search queries
 };
 
-// Rich, high-fidelity fallback dataset for high-availability offline resilience
-const FALLBACK_MOVIES = [
+const cache = new NodeCache({ checkperiod: 300, useClones: false });
+
+/**
+ * In-flight promise map for request coalescing.
+ * Key = cache key, Value = pending Promise.
+ * @type {Map<string, Promise<unknown>>}
+ */
+const inFlight = new Map();
+
+// ---------------------------------------------------------------------------
+// HTTP client
+// ---------------------------------------------------------------------------
+const tmdbClient = axios.create({
+  baseURL: env.TMDB_BASE_URL,
+  timeout: 8000,
+  headers: {
+    accept: "application/json",
+    Authorization: `Bearer ${env.TMDB_READ_ACCESS_TOKEN}`,
+  },
+  params: { language: "en-US" },
+});
+
+// ---------------------------------------------------------------------------
+// Stale-cache store (populated on every successful fetch)
+// @type {Map<string, unknown>}
+// ---------------------------------------------------------------------------
+const staleCache = new Map();
+
+// ---------------------------------------------------------------------------
+// Fallback dataset — returned when TMDB is unreachable and no stale cache exists
+// ---------------------------------------------------------------------------
+const FALLBACK_MEDIA = [
   {
-    id: 693134,
-    title: "Dune: Part Two",
-    original_title: "Dune: Part Two",
-    overview: "Follow the mythic journey of Paul Atreides as he unites with Chani and the Fremen while on a warpath of revenge against the conspirators who destroyed his family.",
+    id: 693134, media_type: "movie", title: "Dune: Part Two", name: undefined,
+    overview: "Paul Atreides unites with Chani and the Fremen while seeking revenge against the conspirators who destroyed his family.",
     poster_path: "/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
-    backdrop_path: "/xOMo8BRK7PfcJv9JCnx7s520b4q.jpg",
-    release_date: "2024-02-27",
-    vote_average: 8.3,
-    vote_count: 4820,
-    genre_ids: [878, 12],
-    trailer_key: "Way9Dexny3w",
+    backdrop_path: "/xOMo8BRK7PfcJv9JCnx7s5hj0PX.jpg",
+    release_date: "2024-02-28", first_air_date: undefined,
+    vote_average: 8.3, genre_ids: [878, 12], trailer_key: "Way9Dexny3w",
   },
   {
-    id: 872585,
-    title: "Oppenheimer",
-    original_title: "Oppenheimer",
-    overview: "The story of J. Robert Oppenheimer’s role in the development of the atomic bomb during World War II, examining the moral weight of technological breakthrough.",
+    id: 872585, media_type: "movie", title: "Oppenheimer", name: undefined,
+    overview: "The story of J. Robert Oppenheimer and his role in the development of the atomic bomb.",
     poster_path: "/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg",
     backdrop_path: "/rLb2cwF3Pazuxaj0sRXQ037tGI1.jpg",
-    release_date: "2023-07-19",
-    vote_average: 8.1,
-    vote_count: 8120,
-    genre_ids: [18, 36],
-    trailer_key: "uYPbbksJxIg",
+    release_date: "2023-07-19", first_air_date: undefined,
+    vote_average: 8.2, genre_ids: [18, 36], trailer_key: "uYPbbksJxIg",
   },
   {
-    id: 157336,
-    title: "Interstellar",
-    original_title: "Interstellar",
-    overview: "The adventures of a group of explorers who make use of a newly discovered wormhole to surpass the limitations on human space travel and conquer the vast distances involved in an interstellar voyage.",
+    id: 157336, media_type: "movie", title: "Interstellar", name: undefined,
+    overview: "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.",
     poster_path: "/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
     backdrop_path: "/xJHokMbljvjADYdit5fK5VQsXEG.jpg",
-    release_date: "2014-11-05",
-    vote_average: 8.4,
-    vote_count: 34200,
-    genre_ids: [12, 18, 878],
-    trailer_key: "zSWdZVtXT7E",
+    release_date: "2014-11-05", first_air_date: undefined,
+    vote_average: 8.4, genre_ids: [12, 18, 878], trailer_key: "zSWdZVtXT7E",
   },
   {
-    id: 335984,
-    title: "Blade Runner 2049",
-    original_title: "Blade Runner 2049",
-    overview: "Thirty years after the events of the first film, a new blade runner, LAPD Officer K, unearths a long-buried secret that has the potential to plunge what's left of society into chaos.",
-    poster_path: "/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg",
-    backdrop_path: "/ilRyAZwxi2x9uyq4VaAdzgmuTeY.jpg",
-    release_date: "2017-10-04",
-    vote_average: 7.6,
-    vote_count: 13000,
-    genre_ids: [878, 18, 9648],
-    trailer_key: "gCcx85zbxz4",
+    id: 136315, media_type: "tv", title: undefined, name: "The Bear",
+    overview: "A young chef from the fine-dining world returns to Chicago to run his family's sandwich shop.",
+    poster_path: "/sHFlbKS3WLqMnp9t2ghADIJFnuQ.jpg",
+    backdrop_path: "/4qe8nUMR4h7gGHHqBFQ3bFCKQaw.jpg",
+    release_date: undefined, first_air_date: "2022-06-23",
+    vote_average: 8.8, genre_ids: [35, 18], trailer_key: "o9kJBrSF6Jc",
   },
   {
-    id: 27205,
-    title: "Inception",
-    original_title: "Inception",
-    overview: "Cobb, a skilled thief who commits corporate espionage by infiltrating the subconscious of his targets is offered a chance to regain his old life in exchange for a nearly impossible task: inception.",
-    poster_path: "/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg",
-    backdrop_path: "/8ZTVqvKDQ8emSGUEMjsS4yHAwrp.jpg",
-    release_date: "2010-07-15",
-    vote_average: 8.4,
-    vote_count: 35800,
-    genre_ids: [28, 878, 12],
-    trailer_key: "YoHD9XEInc0",
+    id: 95396, media_type: "tv", title: undefined, name: "Severance",
+    overview: "Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.",
+    poster_path: "/9sVbVM3QWyFMBGUkEeVKhHbfFpA.jpg",
+    backdrop_path: "/Jnuk6qbblbnOJjpJsOlkPzZjHvU.jpg",
+    release_date: undefined, first_air_date: "2022-02-18",
+    vote_average: 8.7, genre_ids: [18, 9648], trailer_key: "xEQPDhEfMDs",
   },
   {
-    id: 438631,
-    title: "Dune",
-    original_title: "Dune",
-    overview: "Paul Atreides, a brilliant and gifted young man born into a great destiny beyond his understanding, must travel to the most dangerous planet in the universe to ensure the future of his family and his people.",
-    poster_path: "/d5NXSklXo0qyIYkgV94XAgMIckC.jpg",
-    backdrop_path: "/eeijXm355uP96ix55neIcuq0Uo2.jpg",
-    release_date: "2021-09-15",
-    vote_average: 7.8,
-    vote_count: 11400,
-    genre_ids: [878, 12],
-    trailer_key: "8g18jFHCLXk",
+    id: 100088, media_type: "tv", title: undefined, name: "The Last of Us",
+    overview: "Joel, a hardened survivor, is hired to smuggle Ellie out of an oppressive quarantine zone.",
+    poster_path: "/uKvVjHNqB5VmOrdxqAt2F7J78ED.jpg",
+    backdrop_path: "/uDgy6hyPd7qg6aCc6g4bRB2HVCO.jpg",
+    release_date: undefined, first_air_date: "2023-01-15",
+    vote_average: 8.8, genre_ids: [10765, 18], trailer_key: "uLtkt5a53XU",
   },
-  {
-    id: 550,
-    title: "Fight Club",
-    original_title: "Fight Club",
-    overview: "A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy.",
-    poster_path: "/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg",
-    backdrop_path: "/hZkgoQYus5vegHoetLkCJzb17zJ.jpg",
-    release_date: "1999-10-15",
-    vote_average: 8.4,
-    vote_count: 28400,
-    genre_ids: [18],
-    trailer_key: "qtRKdV9EIJU",
-  },
-  {
-    id: 155,
-    title: "The Dark Knight",
-    original_title: "The Dark Knight",
-    overview: "Batman raises the stakes in his war on crime. With the help of Lt. Jim Gordon and District Attorney Harvey Dent, Batman sets out to dismantle the remaining criminal organizations that plague the streets.",
-    poster_path: "/qJ2tW6WMUDux911r6m7haRef0WH.jpg",
-    backdrop_path: "/dqK9Hag1054tghRQSqLSfrkvQnA.jpg",
-    release_date: "2008-07-16",
-    vote_average: 8.5,
-    vote_count: 32000,
-    genre_ids: [18, 28, 80, 53],
-    trailer_key: "EXeTwQWrcwY",
-  }
 ];
 
-class TmdbService {
-  async fetchFromTmdb(endpoint, params = {}) {
-    const cacheKey = `${endpoint}_${JSON.stringify(params)}`;
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+// ---------------------------------------------------------------------------
+// Media normalizer — unified schema across movie and TV
+// ---------------------------------------------------------------------------
 
-    try {
-      const response = await axios.get(`${TMDB_BASE_URL}${endpoint}`, {
-        headers: getHeaders(),
-        params: {
-          language: "en-US",
-          ...params,
-        },
-        timeout: 6000,
-      });
+/**
+ * Normalize a raw TMDB result to a consistent shape.
+ * @param {Record<string, unknown>} item
+ * @param {"movie" | "tv"} [hint]
+ * @returns {Record<string, unknown>}
+ */
+function normalizeMedia(item, hint) {
+  const mediaType = item.media_type || hint || (item.title ? "movie" : "tv");
+  return {
+    ...item,
+    media_type: mediaType,
+    // Unify title field
+    displayTitle: item.title || item.name || "Unknown Title",
+    // Unify release date field
+    displayDate: item.release_date || item.first_air_date || null,
+  };
+}
 
-      cache.set(cacheKey, response.data);
-      return response.data;
-    } catch (error) {
-      console.warn(`[TMDB Proxy] Request to ${endpoint} failed (${error.message}). Checking cache or fallback.`);
+// ---------------------------------------------------------------------------
+// Core fetch with coalescing + multi-tier caching
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch from TMDB with cache-aside + promise coalescing.
+ * @param {string} endpoint
+ * @param {Record<string, unknown>} params
+ * @param {number} ttl - Cache TTL in seconds
+ * @returns {Promise<unknown | null>}
+ */
+async function fetchTmdb(endpoint, params = {}, ttl = TTL.DYNAMIC) {
+  const cacheKey = `${endpoint}::${JSON.stringify(params)}`;
+
+  // 1. Hot cache hit
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  // 2. Request coalescing — if there's already a request in-flight, wait for it
+  if (inFlight.has(cacheKey)) {
+    return inFlight.get(cacheKey);
+  }
+
+  // 3. Launch upstream request and register in the in-flight map
+  const promise = tmdbClient
+    .get(endpoint, { params })
+    .then((res) => {
+      cache.set(cacheKey, res.data, ttl);
+      staleCache.set(cacheKey, res.data);
+      return res.data;
+    })
+    .catch((err) => {
+      const status = err.response?.status;
+      console.warn(`[TMDB] ${endpoint} failed — HTTP ${status ?? "network error"}`);
+
+      // Return stale data on 5xx or 429 (TMDB rate limit)
+      if (staleCache.has(cacheKey)) {
+        console.info(`[TMDB] Serving stale cache for ${endpoint}`);
+        return staleCache.get(cacheKey);
+      }
       return null;
-    }
+    })
+    .finally(() => {
+      inFlight.delete(cacheKey);
+    });
+
+  inFlight.set(cacheKey, promise);
+  return promise;
+}
+
+// ---------------------------------------------------------------------------
+// Service methods
+// ---------------------------------------------------------------------------
+
+class TmdbService {
+  // ── Trending & Feeds ──────────────────────────────────────────────────────
+
+  /** @param {"day" | "week"} timeWindow */
+  async getTrendingAll(timeWindow = "week") {
+    const data = await fetchTmdb(`/trending/all/${timeWindow}`, {}, TTL.DYNAMIC);
+    const results = data?.results ?? FALLBACK_MEDIA;
+    return results.map((item) => normalizeMedia(item));
+  }
+
+  /** @param {"day" | "week"} timeWindow */
+  async getTrendingMovies(timeWindow = "week") {
+    const data = await fetchTmdb(`/trending/movie/${timeWindow}`, {}, TTL.DYNAMIC);
+    return (data?.results ?? FALLBACK_MEDIA.filter((m) => m.media_type === "movie"))
+      .map((item) => normalizeMedia(item, "movie"));
+  }
+
+  async getPopularMovies(page = 1) {
+    const data = await fetchTmdb("/movie/popular", { page }, TTL.DYNAMIC);
+    return (data?.results ?? FALLBACK_MEDIA).map((item) => normalizeMedia(item, "movie"));
   }
 
   async getNowPlaying(page = 1) {
-    const data = await this.fetchFromTmdb("/movie/now_playing", { page });
-    if (data?.results?.length) return data.results;
-    return FALLBACK_MOVIES;
+    const data = await fetchTmdb("/movie/now_playing", { page }, TTL.DYNAMIC);
+    return (data?.results ?? FALLBACK_MEDIA).map((item) => normalizeMedia(item, "movie"));
   }
 
-  async getPopular(page = 1) {
-    const data = await this.fetchFromTmdb("/movie/popular", { page });
-    if (data?.results?.length) return data.results;
-    return [...FALLBACK_MOVIES].reverse();
+  async getTopRatedMovies(page = 1) {
+    const data = await fetchTmdb("/movie/top_rated", { page }, TTL.DYNAMIC);
+    return (data?.results ?? FALLBACK_MEDIA.filter((m) => m.vote_average >= 8.0))
+      .map((item) => normalizeMedia(item, "movie"));
   }
 
-  async getTopRated(page = 1) {
-    const data = await this.fetchFromTmdb("/movie/top_rated", { page });
-    if (data?.results?.length) return data.results;
-    return FALLBACK_MOVIES.filter((m) => m.vote_average >= 8.0);
+  async getUpcomingMovies(page = 1) {
+    const data = await fetchTmdb("/movie/upcoming", { page }, TTL.DYNAMIC);
+    return (data?.results ?? FALLBACK_MEDIA.slice(0, 4)).map((item) => normalizeMedia(item, "movie"));
   }
 
-  async getUpcoming(page = 1) {
-    const data = await this.fetchFromTmdb("/movie/upcoming", { page });
-    if (data?.results?.length) return data.results;
-    return FALLBACK_MOVIES.slice(0, 4);
+  async getPopularTV(page = 1) {
+    const data = await fetchTmdb("/tv/popular", { page }, TTL.DYNAMIC);
+    return (data?.results ?? FALLBACK_MEDIA.filter((m) => m.media_type === "tv"))
+      .map((item) => normalizeMedia(item, "tv"));
   }
 
-  async getTrending(timeWindow = "day") {
-    const data = await this.fetchFromTmdb(`/trending/movie/${timeWindow}`);
-    if (data?.results?.length) return data.results;
-    return FALLBACK_MOVIES;
+  async getTopRatedTV(page = 1) {
+    const data = await fetchTmdb("/tv/top_rated", { page }, TTL.DYNAMIC);
+    return (data?.results ?? FALLBACK_MEDIA.filter((m) => m.media_type === "tv"))
+      .map((item) => normalizeMedia(item, "tv"));
   }
 
-  async getMovieDetails(movieId) {
-    const data = await this.fetchFromTmdb(`/movie/${movieId}`, {
-      append_to_response: "videos,credits,similar",
-    });
-    if (data) return data;
+  // ── Details ───────────────────────────────────────────────────────────────
 
-    const fallback = FALLBACK_MOVIES.find((m) => m.id === Number(movieId)) || FALLBACK_MOVIES[0];
-    return {
-      ...fallback,
-      genres: [{ id: 18, name: "Drama" }, { id: 878, name: "Sci-Fi" }],
-      runtime: 166,
-      status: "Released",
-      tagline: "Experience the cinematic spectacle.",
-    };
-  }
+  /**
+   * @param {number | string} id
+   * @param {"movie" | "tv"} type
+   */
+  async getDetails(id, type = "movie") {
+    const endpoint = `/${type}/${id}`;
+    const data = await fetchTmdb(
+      endpoint,
+      { append_to_response: "videos,credits,similar,recommendations" },
+      TTL.STATIC
+    );
 
-  async getMovieVideos(movieId) {
-    const data = await this.fetchFromTmdb(`/movie/${movieId}/videos`);
-    if (data?.results?.length) {
-      // Prioritize official trailers
-      const trailer = data.results.find(
-        (v) => (v.type === "Trailer" || v.type === "Teaser") && v.site === "YouTube"
-      );
-      return trailer || data.results[0];
+    if (!data) {
+      const fallback = FALLBACK_MEDIA.find((m) => m.id === Number(id));
+      return fallback ? normalizeMedia(fallback, type) : null;
     }
 
-    const fallback = FALLBACK_MOVIES.find((m) => m.id === Number(movieId));
-    return {
-      key: fallback?.trailer_key || "Way9Dexny3w",
-      name: `${fallback?.title || "Movie"} Official Trailer`,
-      site: "YouTube",
-      type: "Trailer",
-    };
+    return normalizeMedia(data, type);
   }
 
-  async searchMovies(query, page = 1) {
-    if (!query || !query.trim()) return [];
+  /**
+   * Fetch watch providers for a media item.
+   * Returns a simplified { [country]: { flatrate, rent, buy } } map.
+   * @param {number | string} id
+   * @param {"movie" | "tv"} type
+   */
+  async getWatchProviders(id, type = "movie") {
+    const data = await fetchTmdb(`/${type}/${id}/watch/providers`, {}, TTL.STATIC);
+    return data?.results ?? {};
+  }
 
-    const data = await this.fetchFromTmdb("/search/movie", {
-      query: query.trim(),
-      include_adult: false,
-      page,
-    });
+  /**
+   * Fetch videos and return the best trailer or teaser.
+   * @param {number | string} id
+   * @param {"movie" | "tv"} type
+   */
+  async getBestTrailer(id, type = "movie") {
+    const data = await fetchTmdb(`/${type}/${id}/videos`, {}, TTL.STATIC);
+    const videos = data?.results ?? [];
 
-    if (data?.results) return data.results;
+    const trailer = videos.find(
+      (v) => v.type === "Trailer" && v.site === "YouTube" && v.official
+    ) ?? videos.find(
+      (v) => (v.type === "Trailer" || v.type === "Teaser") && v.site === "YouTube"
+    ) ?? videos[0];
 
-    // Filter fallback
-    const q = query.toLowerCase();
-    return FALLBACK_MOVIES.filter(
-      (m) => m.title.toLowerCase().includes(q) || m.overview.toLowerCase().includes(q)
+    return trailer ?? null;
+  }
+
+  // ── TV Season & Episodes ──────────────────────────────────────────────────
+
+  /**
+   * @param {number | string} seriesId
+   * @param {number} seasonNumber
+   */
+  async getSeasonDetails(seriesId, seasonNumber) {
+    const data = await fetchTmdb(
+      `/tv/${seriesId}/season/${seasonNumber}`,
+      {},
+      TTL.STATIC
     );
+    return data ?? null;
+  }
+
+  /**
+   * @param {number | string} seriesId
+   * @param {number} seasonNumber
+   * @param {number} episodeNumber
+   */
+  async getEpisodeDetails(seriesId, seasonNumber, episodeNumber) {
+    const data = await fetchTmdb(
+      `/tv/${seriesId}/season/${seasonNumber}/episode/${episodeNumber}`,
+      {},
+      TTL.STATIC
+    );
+    return data ?? null;
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────────
+
+  /**
+   * Unified multi-type search (movies + TV in one request via /search/multi).
+   * @param {string} query
+   * @param {number} page
+   */
+  async searchMulti(query, page = 1) {
+    const q = query?.trim();
+    if (!q) return [];
+
+    const data = await fetchTmdb(
+      "/search/multi",
+      { query: q, include_adult: false, page },
+      TTL.SEARCH
+    );
+
+    const results = data?.results ?? [];
+    return results
+      .filter((item) => item.media_type === "movie" || item.media_type === "tv")
+      .map((item) => normalizeMedia(item));
+  }
+
+  /**
+   * Movie-only search.
+   * @param {string} query
+   * @param {number} page
+   */
+  async searchMovies(query, page = 1) {
+    const q = query?.trim();
+    if (!q) return [];
+
+    const data = await fetchTmdb(
+      "/search/movie",
+      { query: q, include_adult: false, page },
+      TTL.SEARCH
+    );
+
+    const results = data?.results ?? [];
+    if (!results.length) {
+      const ql = q.toLowerCase();
+      return FALLBACK_MEDIA.filter(
+        (m) =>
+          m.media_type === "movie" &&
+          ((m.title ?? "").toLowerCase().includes(ql) ||
+            m.overview.toLowerCase().includes(ql))
+      ).map((item) => normalizeMedia(item, "movie"));
+    }
+
+    return results.map((item) => normalizeMedia(item, "movie"));
+  }
+
+  /**
+   * TV-only search.
+   * @param {string} query
+   * @param {number} page
+   */
+  async searchTV(query, page = 1) {
+    const q = query?.trim();
+    if (!q) return [];
+
+    const data = await fetchTmdb(
+      "/search/tv",
+      { query: q, include_adult: false, page },
+      TTL.SEARCH
+    );
+
+    return (data?.results ?? []).map((item) => normalizeMedia(item, "tv"));
+  }
+
+  // ── Genres ────────────────────────────────────────────────────────────────
+
+  async getMovieGenres() {
+    const data = await fetchTmdb("/genre/movie/list", {}, TTL.STATIC);
+    return data?.genres ?? [];
+  }
+
+  async getTVGenres() {
+    const data = await fetchTmdb("/genre/tv/list", {}, TTL.STATIC);
+    return data?.genres ?? [];
   }
 }
 

@@ -1,0 +1,106 @@
+// Prisma schema for OnlyFlix 2.0
+// Dual-URL architecture: pooled connection for app runtime (PgBouncer),
+// direct connection for CLI migrations (schema pushes, introspection).
+
+generator client {
+  provider = "prisma-client-js"
+  // Output to node_modules for standard import; override for monorepos if needed
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Pooled PgBouncer URL used by the running Express application
+  url       = env("DATABASE_URL")
+  // Non-pooled direct URL used exclusively by Prisma CLI (migrate, db push, introspect)
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum MediaType {
+  MOVIE
+  TV
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// ---------------------------------------------------------------------------
+// User
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  fullName  String
+  avatarUrl String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  watchlist    Watchlist[]
+  watchHistory WatchHistory[]
+
+  @@index([email])
+}
+
+// ---------------------------------------------------------------------------
+// Watchlist
+// Compound unique constraint prevents race-condition duplicate bookmarks.
+// ---------------------------------------------------------------------------
+
+model Watchlist {
+  id           String    @id @default(uuid())
+  userId       String
+  mediaId      Int
+  mediaType    MediaType
+  title        String
+  posterPath   String?
+  backdropPath String?
+  overview     String    @default("")
+  voteAverage  Float     @default(0)
+  releaseDate  String    @default("")
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Prevent a user from bookmarking the same title twice regardless of race conditions
+  @@unique([userId, mediaId, mediaType])
+  @@index([userId])
+  @@index([mediaId, mediaType])
+}
+
+// ---------------------------------------------------------------------------
+// WatchHistory
+// Compound unique ensures one progress record per user per episode/movie.
+// nullable seasonNumber and episodeNumber = Movie or unstarted TV tracking.
+// ---------------------------------------------------------------------------
+
+model WatchHistory {
+  id             String    @id @default(uuid())
+  userId         String
+  mediaId        Int
+  mediaType      MediaType
+  title          String    @default("")
+  posterPath     String?
+  seasonNumber   Int?
+  episodeNumber  Int?
+  progressSeconds Int      @default(0)
+  durationSeconds Int      @default(0)
+  completed      Boolean   @default(false)
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Unique progress record per user/media/season/episode combination
+  @@unique([userId, mediaId, mediaType, seasonNumber, episodeNumber])
+  @@index([userId])
+  @@index([mediaId, mediaType])
+  @@index([updatedAt])
+}

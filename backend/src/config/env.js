@@ -1,25 +1,87 @@
-import dotenv from "dotenv";
+/**
+ * @file backend/src/config/env.js
+ * @description Centralized, Zod-validated environment configuration.
+ *
+ * All process.env access in the application MUST be done through this module.
+ * This ensures:
+ *  1. The app crashes loudly at startup (fail-fast) if a required variable is missing.
+ *  2. Types are coerced correctly (strings to numbers, booleans, URLs).
+ *  3. Defaults are explicit and documented, not scattered across the codebase.
+ */
+
 import { z } from "zod";
 
-dotenv.config();
+// ---------------------------------------------------------------------------
+// Schema definition
+// ---------------------------------------------------------------------------
 
 const envSchema = z.object({
-  PORT: z.string().default("8080").transform((val) => parseInt(val, 10)),
-  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  MONGO_URI: z.string().min(1, "MONGO_URI is required"),
-  JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters long").default("onlyflix_super_secure_jwt_secret_key_2026"),
+  // Runtime
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
+  PORT: z.coerce.number().int().positive().default(5000),
+
+  // Neon PostgreSQL — dual-string pooling architecture
+  DATABASE_URL: z
+    .string()
+    .url()
+    .describe("Pooled PgBouncer URL for application runtime connections"),
+  DIRECT_URL: z
+    .string()
+    .url()
+    .describe("Direct (non-pooled) URL for Prisma CLI migrations and schema pushes"),
+
+  // TMDB
+  TMDB_API_KEY: z
+    .string()
+    .min(10)
+    .describe("TMDB v3 API key — never exposed to the client"),
+  TMDB_BASE_URL: z
+    .string()
+    .url()
+    .default("https://api.themoviedb.org/3"),
+
+  // Authentication
+  JWT_SECRET: z
+    .string()
+    .min(32)
+    .describe("Minimum 32-char secret for HS256 JWT signing"),
   JWT_EXPIRES_IN: z.string().default("7d"),
-  CLIENT_URL: z.string().default("http://localhost:3000"),
-  TMDB_API_KEY: z.string().optional().default(""),
-  TMDB_READ_ACCESS_TOKEN: z.string().optional().default("eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJhZGJlZjViMDUzNWE3OGYwMjllMTQ0NDE5NTQ4MjM4MCIsInN1YiI6IjY1MDRhMjNkNTllOGE5MDExZWNhYTVjZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.LTBaAb_2NPRGPr2HeGszyFDP-onLh-fiL7fzmnOFZUg"),
+  COOKIE_MAX_AGE_MS: z.coerce.number().int().positive().default(7 * 24 * 60 * 60 * 1000),
+
+  // CORS
+  CLIENT_URL: z
+    .string()
+    .url()
+    .default("http://localhost:3000")
+    .describe("Allowed frontend origin for CORS policy"),
+
+  // Rate limiting
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(200),
 });
 
-const parsedEnv = envSchema.safeParse(process.env);
+// ---------------------------------------------------------------------------
+// Parse and export
+// Calling `safeParse` lets us produce a rich human-readable error message
+// instead of Zod's default stack trace.
+// ---------------------------------------------------------------------------
 
-if (!parsedEnv.success) {
-  console.error("Environment Configuration Validation Failed:");
-  console.error(JSON.stringify(parsedEnv.error.format(), null, 2));
+const result = envSchema.safeParse(process.env);
+
+if (!result.success) {
+  const missing = result.error.issues
+    .map((issue) => `  • ${issue.path.join(".")}: ${issue.message}`)
+    .join("\n");
+
+  console.error(
+    `\n[OnlyFlix] ❌ Environment validation failed. Fix the following:\n${missing}\n`
+  );
   process.exit(1);
 }
 
-export const env = parsedEnv.data;
+/** @type {z.infer<typeof envSchema>} */
+export const env = Object.freeze(result.data);
+
+export default env;

@@ -1,0 +1,36 @@
+services:
+  # Backend Web Service
+  - type: web
+    name: onlyflix-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_URL
+        sync: false
+      - key: TMDB_READ_ACCESS_TOKEN
+        sync: false
+
+  # Frontend Static Site
+  - type: web
+    name: onlyflix-frontend
+    runtime: static
+    rootDir: netflix
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./build
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false
