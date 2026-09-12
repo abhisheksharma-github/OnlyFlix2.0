@@ -1,20 +1,61 @@
-import React from 'react'
-import MovieList from './MovieList';
-import {useSelector} from "react-redux";
+import React from "react";
+import { useSelector } from "react-redux";
+import { Flame, Star, Clock, Sparkles, Film } from "lucide-react";
+import MovieRow from "./movie/MovieRow";
 
-const MovieContainer = () => {
-  const movie = useSelector(store=>store.movie);
-  
+export const MovieContainer = () => {
+  const { nowPlaying, popular, topRated, upcoming, trending, isLoadingMovies } = useSelector(
+    (state) => state.movie
+  );
+
   return (
-    <div className='bg-black'>
-      <div className='-mt-52 relative z-10' >
-        <MovieList title={"Popular Movies"} movies={movie.popularMovie}/>
-        <MovieList title={"Now Playing Movies"} movies={movie.nowPlayingMovies}/>
-        <MovieList title={"Top Tated Movies"} movies={movie.topRatedMovies}/>
-        <MovieList title={"Upcoming Movies"} movies={movie.upcomingMovies}/>
-      </div>
-    </div>
-  )
-}
+    <div className="relative z-20 pb-20 -mt-12 sm:-mt-20 space-y-2 sm:space-y-4">
+      {trending?.length > 0 && (
+        <MovieRow
+          title="Trending Today"
+          icon={Flame}
+          movies={trending}
+          isLoading={isLoadingMovies}
+        />
+      )}
 
-export default MovieContainer
+      {nowPlaying?.length > 0 && (
+        <MovieRow
+          title="Now Playing in Theaters"
+          icon={Film}
+          movies={nowPlaying}
+          isLoading={isLoadingMovies}
+        />
+      )}
+
+      {popular?.length > 0 && (
+        <MovieRow
+          title="Popular Worldwide"
+          icon={Sparkles}
+          movies={popular}
+          isLoading={isLoadingMovies}
+        />
+      )}
+
+      {topRated?.length > 0 && (
+        <MovieRow
+          title="Top Rated Masterpieces"
+          icon={Star}
+          movies={topRated}
+          isLoading={isLoadingMovies}
+        />
+      )}
+
+      {upcoming?.length > 0 && (
+        <MovieRow
+          title="Upcoming Releases"
+          icon={Clock}
+          movies={upcoming}
+          isLoading={isLoadingMovies}
+        />
+      )}
+    </div>
+  );
+};
+
+export default MovieContainer;

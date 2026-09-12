@@ -1,15 +1,28 @@
-import axios from "axios";
-import {getUpcomingMovie } from "../redux/movieSlice";
-import {Upcoming_Movie, options } from "../utils/constant";
-import {useDispatch} from "react-redux";
+import { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { moviesApi } from "../api/client";
+import { setUpcoming } from "../redux/movieSlice";
 
-const useUpcomingMovies = async () => {
-    const dispatch = useDispatch();
-    try {
-        const res = await axios.get(Upcoming_Movie, options);
-        dispatch(getUpcomingMovie(res.data.results));
-    } catch (error) {
-        console.log(error);
-    }
-}
+const useUpcomingMovies = () => {
+  const dispatch = useDispatch();
+  const upcoming = useSelector((state) => state.movie.upcoming);
+
+  useEffect(() => {
+    if (upcoming?.length > 0) return;
+
+    const fetchUpcoming = async () => {
+      try {
+        const res = await moviesApi.getUpcoming();
+        if (res?.data) {
+          dispatch(setUpcoming(res.data));
+        }
+      } catch (err) {
+        console.warn("Failed to load upcoming movies:", err);
+      }
+    };
+
+    fetchUpcoming();
+  }, [dispatch, upcoming?.length]);
+};
+
 export default useUpcomingMovies;

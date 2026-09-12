@@ -1,44 +1,110 @@
-import {createSlice} from "@reduxjs/toolkit";
+import { createSlice } from "@reduxjs/toolkit";
+
+const initialState = {
+  nowPlaying: [],
+  popular: [],
+  topRated: [],
+  upcoming: [],
+  trending: [],
+  heroMovie: null,
+  selectedMovie: null,
+  trailerKey: null,
+  isModalOpen: false,
+  isLoadingTrailer: false,
+  isLoadingMovies: true,
+  error: null,
+};
 
 const movieSlice = createSlice({
-    name:"movie",
-    initialState:{
-        nowPlayingMovies:null,
-        popularMovie:null,
-        topRatedMovies:null,
-        upcomingMovies:null,
-        toggle:false,
-        trailerMovie:null, 
-        open:false,
-        id:"",
+  name: "movie",
+  initialState,
+  reducers: {
+    setNowPlaying: (state, action) => {
+      state.nowPlaying = action.payload || [];
+      if (!state.heroMovie && action.payload?.length > 0) {
+        state.heroMovie = action.payload[0];
+      }
     },
-    reducers:{
-        // actions
-        getNowPlayingMovies:(state,action)=>{
-            state.nowPlayingMovies = action.payload;
-        },
-        getPopularMovie:(state,action)=>{
-            state.popularMovie = action.payload;
-        },
-        getTopRatedMovie:(state,action)=>{
-            state.topRatedMovies = action.payload;
-        },
-        getUpcomingMovie:(state,action)=>{
-            state.upcomingMovies = action.payload;
-        },
-        setToggle:(state)=>{
-            state.toggle = !state.toggle;
-        },
-        getTrailerMovie:(state,action)=>{
-            state.trailerMovie = action.payload;
-        },
-        setOpen:(state,action)=>{
-            state.open = action.payload;
-        },
-        getId:(state,action)=>{
-            state.id = action.payload;
-        }
-    }
+    setPopular: (state, action) => {
+      state.popular = action.payload || [];
+    },
+    setTopRated: (state, action) => {
+      state.topRated = action.payload || [];
+    },
+    setUpcoming: (state, action) => {
+      state.upcoming = action.payload || [];
+    },
+    setTrending: (state, action) => {
+      state.trending = action.payload || [];
+    },
+    setHeroMovie: (state, action) => {
+      state.heroMovie = action.payload;
+    },
+    setSelectedMovie: (state, action) => {
+      state.selectedMovie = action.payload;
+    },
+    setTrailerKey: (state, action) => {
+      state.trailerKey = action.payload;
+    },
+    setModalOpen: (state, action) => {
+      state.isModalOpen = action.payload;
+      if (!action.payload) {
+        state.trailerKey = null;
+      }
+    },
+    setLoadingTrailer: (state, action) => {
+      state.isLoadingTrailer = action.payload;
+    },
+    setLoadingMovies: (state, action) => {
+      state.isLoadingMovies = action.payload;
+    },
+    // Backward compatibility aliases
+    getNowPlayingMovies: (state, action) => {
+      state.nowPlaying = action.payload || [];
+      if (!state.heroMovie && action.payload?.length > 0) {
+        state.heroMovie = action.payload[0];
+      }
+    },
+    getPopularMovie: (state, action) => {
+      state.popular = action.payload || [];
+    },
+    getTopRatedMovie: (state, action) => {
+      state.topRated = action.payload || [];
+    },
+    getUpcomingMovie: (state, action) => {
+      state.upcoming = action.payload || [];
+    },
+    getTrailerMovie: (state, action) => {
+      state.trailerKey = action.payload?.key || action.payload;
+    },
+    setOpen: (state, action) => {
+      state.isModalOpen = action.payload;
+    },
+    getId: (state, action) => {
+      state.selectedMovie = { id: action.payload };
+    },
+  },
 });
-export const {getNowPlayingMovies, getPopularMovie, getTopRatedMovie, getUpcomingMovie,setToggle,getTrailerMovie,setOpen,getId} = movieSlice.actions;
+
+export const {
+  setNowPlaying,
+  setPopular,
+  setTopRated,
+  setUpcoming,
+  setTrending,
+  setHeroMovie,
+  setSelectedMovie,
+  setTrailerKey,
+  setModalOpen,
+  setLoadingTrailer,
+  setLoadingMovies,
+  getNowPlayingMovies,
+  getPopularMovie,
+  getTopRatedMovie,
+  getUpcomingMovie,
+  getTrailerMovie,
+  setOpen,
+  getId,
+} = movieSlice.actions;
+
 export default movieSlice.reducer;

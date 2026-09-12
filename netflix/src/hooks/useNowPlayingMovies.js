@@ -1,15 +1,28 @@
-import axios from "axios";
-import { getNowPlayingMovies } from "../redux/movieSlice";
-import { Now_Playing_Movie, options } from "../utils/constant";
-import {useDispatch} from "react-redux";
+import { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { moviesApi } from "../api/client";
+import { setNowPlaying } from "../redux/movieSlice";
 
-const useNowPlayingMovies = async () => {
-    const dispatch = useDispatch();
-    try {
-        const res = await axios.get(Now_Playing_Movie, options);
-        dispatch(getNowPlayingMovies(res.data.results));
-    } catch (error) {
-        console.log(error);
-    }
-}
+const useNowPlayingMovies = () => {
+  const dispatch = useDispatch();
+  const nowPlaying = useSelector((state) => state.movie.nowPlaying);
+
+  useEffect(() => {
+    if (nowPlaying?.length > 0) return;
+
+    const fetchNowPlaying = async () => {
+      try {
+        const res = await moviesApi.getNowPlaying();
+        if (res?.data) {
+          dispatch(setNowPlaying(res.data));
+        }
+      } catch (err) {
+        console.warn("Failed to load now playing:", err);
+      }
+    };
+
+    fetchNowPlaying();
+  }, [dispatch, nowPlaying?.length]);
+};
+
 export default useNowPlayingMovies;

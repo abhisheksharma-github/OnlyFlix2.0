@@ -1,48 +1,68 @@
-import React, { useEffect } from 'react'
-import Header from './Header';
-import { useSelector} from "react-redux";
+import React, { useEffect } from "react";
+import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import MainContainer from './MainContainer';
-import MovieContainer from './MovieContainer';
-import useNowPlayingMovies from '../hooks/useNowPlayingMovies';
-import usePopularMovies from '../hooks/usePopularMovies';
-import useTopRatedMovies from '../hooks/useTopRatedMovies';
-import useUpcomingMovies from '../hooks/useUpcomingMovies';
-import SearchMovie from './SearchMovie';
+import { useAuth } from "../hooks/useAuth";
+import { useMovies } from "../hooks/useMovies";
+import Navbar from "./common/Navbar";
+import HeroSpotlight from "./movie/HeroSpotlight";
+import MovieContainer from "./MovieContainer";
+import SearchMovie from "./search/SearchMovie";
+import WatchlistView from "./watchlist/WatchlistView";
+import MovieDetailModal from "./common/MovieDetailModal";
+import Footer from "./common/Footer";
+import { Film } from "lucide-react";
 
-const Browse = () => {
-    const user = useSelector(store => store.app.user);
-    const toggle = useSelector(store => store.movie.toggle);
-    const navigate = useNavigate();
+export const Browse = () => {
+  const navigate = useNavigate();
+  const { isAuthenticated, isCheckingAuth } = useAuth();
+  const { activeTab } = useSelector((state) => state.ui);
 
-    // my custom hooks
-    useNowPlayingMovies();
-    usePopularMovies();
-    useTopRatedMovies();
-    useUpcomingMovies();
+  // Initialize movie catalog
+  useMovies();
 
-    useEffect(() => {
-        if (!user) {
-            navigate("/");
-        }
-    }, []);
+  useEffect(() => {
+    if (!isCheckingAuth && !isAuthenticated) {
+      navigate("/");
+    }
+  }, [isCheckingAuth, isAuthenticated, navigate]);
+
+  if (isCheckingAuth) {
     return (
-        <div >
-            <Header />
-            <div>
-                {
-                    toggle ? <SearchMovie /> : (
-                        <>
-                            <MainContainer />
-                            <MovieContainer />
-                        </>
-
-                    )
-                }
-
-            </div>
+      <div className="min-h-screen bg-canvas-base flex flex-col items-center justify-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center animate-pulse shadow-glow-lg">
+          <Film className="w-6 h-6 text-white" />
         </div>
-    )
-}
+        <p className="text-xs text-zinc-400 font-medium tracking-wide">
+          Loading OnlyFlix Experience...
+        </p>
+      </div>
+    );
+  }
 
-export default Browse
+  return (
+    <div className="min-h-screen bg-canvas-base text-zinc-100 flex flex-col justify-between selection:bg-brand selection:text-white">
+      {/* Fixed Glass Navbar */}
+      <Navbar />
+
+      {/* Main Content Area */}
+      <main className="flex-grow">
+        {activeTab === "search" && <SearchMovie />}
+        {activeTab === "watchlist" && <WatchlistView />}
+        {activeTab !== "search" && activeTab !== "watchlist" && (
+          <>
+            <HeroSpotlight />
+            <MovieContainer />
+          </>
+        )}
+      </main>
+
+      {/* Global Cinematic Movie Trailer / Details Modal */}
+      <MovieDetailModal />
+
+      {/* Editorial Footer */}
+      <Footer />
+    </div>
+  );
+};
+
+export default Browse;

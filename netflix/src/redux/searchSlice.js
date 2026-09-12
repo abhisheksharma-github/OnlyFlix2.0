@@ -1,19 +1,8 @@
-import {createSlice} from "@reduxjs/toolkit";
+import uiReducer, { setSearchQuery, setSearchResults, setIsSearching } from "./uiSlice";
 
-const searchSlice = createSlice({
-    name:"search",
-    initialState:{
-        movieName:null,
-        searchedMovie:null
-    },
-    reducers:{
-        // actions
-        setSearchMovieDetails:(state,action)=>{
-            const {searchMovie, movies} = action.payload;
-            state.movieName = searchMovie;
-            state.searchedMovie = movies;
-        }
-    }
-});
-export const {setSearchMovieDetails} = searchSlice.actions;
-export default searchSlice.reducer;
+export const setSearchMovieDetails = ({ searchMovie, movies }) => (dispatch) => {
+  dispatch(setSearchQuery(searchMovie));
+  dispatch(setSearchResults(movies));
+};
+
+export default uiReducer;

@@ -1,30 +1,38 @@
-import axios from "axios";
-import { options } from '../utils/constant';
-import { useDispatch } from "react-redux";
-import { getTrailerMovie } from '../redux/movieSlice';
 import { useEffect } from "react";
+import { useDispatch } from "react-redux";
+import { moviesApi } from "../api/client";
+import { setTrailerKey, setLoadingTrailer } from "../redux/movieSlice";
 
-
-const useMovieById = async (movieId) => {
+export const useMovieById = (movieId) => {
   const dispatch = useDispatch();
-  
+
   useEffect(() => {
-    const getMovieById = async () => {
+    if (!movieId) return;
+
+    let isMounted = true;
+
+    const fetchTrailer = async () => {
       try {
-        const res = await axios.get(`https://api.themoviedb.org/3/movie/${movieId}/videos`, options);
-
-        console.log(res.data.results);
-        const trailer = res?.data?.results?.filter((item) => {
-          return item.type === "Trailer";
-        })
-        dispatch(getTrailerMovie(trailer.length > 0 ? trailer[0] : res.data.results[0]));
-      } catch (error) {
-        console.log(error);
+        dispatch(setLoadingTrailer(true));
+        const res = await moviesApi.getVideos(movieId);
+        if (isMounted && res?.data?.key) {
+          dispatch(setTrailerKey(res.data.key));
+        }
+      } catch (err) {
+        console.warn("Failed to fetch trailer:", err);
+      } finally {
+        if (isMounted) {
+          dispatch(setLoadingTrailer(false));
+        }
       }
-    }
-    getMovieById();
-  },[])
+    };
 
-}
+    fetchTrailer();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [movieId, dispatch]);
+};
 
 export default useMovieById;

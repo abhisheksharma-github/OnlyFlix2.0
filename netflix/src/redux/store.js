@@ -1,13 +1,22 @@
-import {configureStore} from "@reduxjs/toolkit";
-import userReducer from "./userSlice";
+import { configureStore } from "@reduxjs/toolkit";
+import authReducer from "./authSlice";
 import movieReducer from "./movieSlice";
-import searchSlice from "./searchSlice";
+import watchlistReducer from "./watchlistSlice";
+import uiReducer from "./uiSlice";
 
-const store = configureStore({
-    reducer:{
-        app:userReducer,
-        movie:movieReducer,
-        searchMovie:searchSlice
-    }
+export const store = configureStore({
+  reducer: {
+    app: authReducer,
+    auth: authReducer,
+    movie: movieReducer,
+    watchlist: watchlistReducer,
+    ui: uiReducer,
+    searchMovie: uiReducer, // For backward compatibility
+  },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: false,
+    }),
 });
+
 export default store;
