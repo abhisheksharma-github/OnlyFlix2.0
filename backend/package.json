@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && prisma db push",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",

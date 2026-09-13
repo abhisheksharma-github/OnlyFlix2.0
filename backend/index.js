@@ -88,6 +88,28 @@ app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(cookieParser());
 
+// Root & Health Check Endpoints
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    name: "OnlyFlix 2.0 API Gateway",
+    version: "2.0.0",
+    status: "active",
+    environment: env.NODE_ENV,
+    apiBase: "/api/v1",
+    documentation: "https://github.com/abhisheksharma-github/OnlyFlix2.0",
+  });
+});
+
+app.get("/health", async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: "healthy", database: "connected", timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(503).json({ status: "unhealthy", database: err.message, timestamp: new Date().toISOString() });
+  }
+});
+
 // API v1 Routes
 app.use("/api/v1", apiRouter);
 
