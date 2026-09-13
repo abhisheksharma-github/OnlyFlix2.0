@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Search, X, Film, AlertCircle } from "lucide-react";
+import { Search, X, Film, AlertCircle, Sparkles } from "lucide-react";
 import { moviesApi } from "../../api/client";
 import { setSearchQuery, setSearchResults, setIsSearching } from "../../redux/uiSlice";
 import { useDebounce } from "../../hooks/useDebounce";
 import MovieCard from "../movie/MovieCard";
 import { MovieCardSkeleton } from "../common/Skeleton";
 
-const GENRES = ["All", "Action", "Sci-Fi", "Drama", "Comedy", "Thriller", "Horror", "Adventure"];
+const GENRES = ["All", "Action", "Sci-Fi", "Drama", "Comedy", "Thriller", "Horror", "Adventure", "Animation"];
 
 export const SearchMovie = () => {
   const dispatch = useDispatch();
@@ -30,7 +30,7 @@ export const SearchMovie = () => {
 
       dispatch(setIsSearching(true));
       try {
-        const res = await moviesApi.search(debouncedQuery.trim());
+        const res = await moviesApi.searchMulti(debouncedQuery.trim());
         dispatch(setSearchResults(res.data || []));
       } catch (err) {
         console.warn("Search failed:", err);
@@ -56,22 +56,26 @@ export const SearchMovie = () => {
     <div className="min-h-screen pt-28 pb-20 px-4 sm:px-8 md:px-12 max-w-7xl mx-auto space-y-8 animate-fade-in">
       {/* Header & Search Bar */}
       <div className="max-w-2xl mx-auto text-center space-y-4">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand/10 border border-brand/20 text-brand text-xs font-bold uppercase tracking-wider">
+          <Sparkles size={13} />
+          <span>Global TMDB Movie Search</span>
+        </div>
         <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-          Explore <span className="text-brand">OnlyFlix</span> Catalog
+          Search the <span className="text-brand">OnlyFlix</span> Vault
         </h2>
-        <p className="text-zinc-400 text-sm">
-          Discover millions of movies, trailers, and hidden gems across all genres.
+        <p className="text-zinc-400 text-xs sm:text-sm">
+          Instant access to millions of movie trailers, cast details, and IMDb ratings.
         </p>
 
         {/* Input Bar */}
-        <div className="relative flex items-center bg-canvas-card border border-white/10 rounded-2xl shadow-tactile p-2 pl-4 focus-within:border-brand/60 focus-within:ring-1 focus-within:ring-brand/60 transition-all">
-          <Search size={20} className="text-zinc-400 flex-shrink-0 mr-3" />
+        <div className="relative flex items-center bg-[#12131A] border border-white/10 rounded-2xl shadow-2xl p-2 pl-4 focus-within:border-brand/70 focus-within:ring-2 focus-within:ring-brand/30 transition-all">
+          <Search size={20} className="text-brand flex-shrink-0 mr-3" />
           <input
             type="text"
             value={localInput}
             onChange={(e) => setLocalInput(e.target.value)}
-            placeholder="Search by title, director, or actor..."
-            className="w-full bg-transparent text-white text-base placeholder-zinc-500 outline-none"
+            placeholder="Search by movie title, actor, director..."
+            className="w-full bg-transparent text-white text-sm sm:text-base placeholder-zinc-500 outline-none font-medium"
             autoFocus
           />
           {localInput && (
@@ -90,7 +94,7 @@ export const SearchMovie = () => {
             <button
               key={genre}
               onClick={() => setSelectedGenre(genre)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 selectedGenre === genre
                   ? "bg-brand text-white shadow-glow-sm"
                   : "bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 border border-white/5"
@@ -103,7 +107,7 @@ export const SearchMovie = () => {
       </div>
 
       {/* Results Content */}
-      <div className="pt-6">
+      <div className="pt-4">
         {isSearching ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
             {Array.from({ length: 10 }).map((_, idx) => (
@@ -113,21 +117,21 @@ export const SearchMovie = () => {
         ) : localInput.trim() === "" ? (
           /* Empty Search Initial State */
           <div className="text-center py-20 space-y-4 max-w-md mx-auto">
-            <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-white/10 flex items-center justify-center mx-auto text-zinc-500">
+            <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-white/10 flex items-center justify-center mx-auto text-brand shadow-glow-sm">
               <Film size={28} />
             </div>
-            <h3 className="text-lg font-bold text-white">Start searching above</h3>
+            <h3 className="text-lg font-bold text-white">Ready to explore?</h3>
             <p className="text-xs sm:text-sm text-zinc-400">
-              Type movie titles like <span className="text-zinc-200 font-medium">"Oppenheimer"</span>,{" "}
-              <span className="text-zinc-200 font-medium">"Interstellar"</span>, or{" "}
-              <span className="text-zinc-200 font-medium">"Dune"</span>.
+              Type movie titles like <span className="text-white font-semibold">"Oppenheimer"</span>,{" "}
+              <span className="text-white font-semibold">"Interstellar"</span>, or{" "}
+              <span className="text-white font-semibold">"Dune"</span>.
             </p>
           </div>
         ) : filteredResults.length > 0 ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs sm:text-sm text-zinc-400 px-1">
               <span>
-                Found <strong className="text-white">{filteredResults.length}</strong> matching titles
+                Found <strong className="text-white font-bold">{filteredResults.length}</strong> matching titles
               </span>
             </div>
 
@@ -145,7 +149,7 @@ export const SearchMovie = () => {
             </div>
             <h3 className="text-lg font-bold text-white">No titles found for "{localInput}"</h3>
             <p className="text-xs sm:text-sm text-zinc-400">
-              Try checking your spelling or searching for a different keyword.
+              Try checking your spelling or searching for a broader keyword.
             </p>
           </div>
         )}
