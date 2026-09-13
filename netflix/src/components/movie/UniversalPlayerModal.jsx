@@ -27,7 +27,6 @@ import {
   Calendar,
   Clock,
   ChevronDown,
-  ExternalLink,
 } from "lucide-react";
 import { closeModal } from "../../redux/uiSlice";
 import { useMediaDetails } from "../../hooks/useMediaDetails";

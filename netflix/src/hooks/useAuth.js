@@ -2,7 +2,7 @@ import { useEffect, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { setUser, clearError, loginUser, registerUser, logoutUser, checkSession } from "../redux/authSlice";
+import { clearError, loginUser, registerUser, logoutUser, checkSession } from "../redux/authSlice";
 
 export const useAuth = () => {
   const dispatch = useDispatch();

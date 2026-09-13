@@ -7,7 +7,6 @@ import {
   removeFromWatchlist,
   optimisticAdd,
   optimisticRemove,
-  selectIsInWatchlist,
 } from "../redux/watchlistSlice";
 
 export const useWatchlist = () => {
@@ -25,14 +24,6 @@ export const useWatchlist = () => {
     refreshWatchlist();
   }, [refreshWatchlist]);
 
-  // O(1) membership check via the idSet
-  const isInWatchlist = useCallback(
-    (mediaId, mediaType = "movie") => {
-      return selectIsInWatchlist(mediaId, mediaType)({ watchlist: { idSet: [] } });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items]
-  );
 
   const toggleWatchlist = async (movie, mediaType = "movie") => {
     if (!isAuthenticated) {
@@ -52,8 +43,6 @@ export const useWatchlist = () => {
       releaseDate: movie.release_date || movie.releaseDate || "",
     };
 
-    // Check membership directly from redux state via the hook's selector
-    const key = `${mediaId}::${mediaType}`;
     const inList = items.some(
       (item) => item.mediaId === mediaId && item.mediaType === mediaType
     );
