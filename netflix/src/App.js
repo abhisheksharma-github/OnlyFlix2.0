@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import { useDispatch } from "react-redux";
 import Body from "./components/Body";
-import UniversalPlayerModal from "./components/movie/UniversalPlayerModal";
 import { Toaster } from "react-hot-toast";
 import { checkSession } from "./redux/authSlice";
 import { hydrateWatchlistIds } from "./redux/watchlistSlice";
@@ -24,8 +23,6 @@ function App() {
       style={{ background: "var(--bg-base)", fontFamily: "'Inter', sans-serif" }}
     >
       <Body />
-      {/* Modal is rendered at the root so it's always above everything */}
-      <UniversalPlayerModal />
       <Toaster
         position="top-right"
         toastOptions={{

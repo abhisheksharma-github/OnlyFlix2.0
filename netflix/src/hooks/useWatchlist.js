@@ -25,6 +25,14 @@ export const useWatchlist = () => {
   }, [refreshWatchlist]);
 
 
+  // O(1) item check
+  const isInWatchlist = useCallback(
+    (mediaId) => {
+      return items.some((item) => Number(item.mediaId || item.id) === Number(mediaId));
+    },
+    [items]
+  );
+
   const toggleWatchlist = async (movie, mediaType = "movie") => {
     if (!isAuthenticated) {
       toast.error("Please sign in to add titles to your watchlist.");
@@ -74,6 +82,7 @@ export const useWatchlist = () => {
     items,
     isLoading,
     isMutating,
+    isInWatchlist,
     toggleWatchlist,
     refreshWatchlist,
   };

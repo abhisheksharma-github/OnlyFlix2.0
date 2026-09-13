@@ -198,6 +198,6 @@ export const selectWatchlistSet = (state) => new Set(state.watchlist.idSet);
  * @param {string} mediaType
  */
 export const selectIsInWatchlist = (mediaId, mediaType) => (state) =>
-  state.watchlist.idSet.includes(makeKey(mediaId, mediaType));
+  Boolean(mediaId && state.watchlist?.idSet?.includes(makeKey(mediaId, mediaType)));
 
 export default watchlistSlice.reducer;
